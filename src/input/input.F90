@@ -34,7 +34,7 @@
    integer,parameter,public :: maxpathlen=256
 
    type type_input
-      character(len=:), allocatable :: name
+      character(len=128)            :: name
       integer                       :: method = 0     ! 0: constant, 2: from file
       REALTYPE                      :: scale_factor = _ONE_
       character(len=maxpathlen)     :: path = ''
@@ -113,7 +113,7 @@
       integer                             :: secs2 = 0
       integer                             :: unit = -1
       integer                             :: lines = 0
-      integer                             :: n
+      integer                             :: n = 0
       type (type_scalar_input_list)       :: variables
       type (type_timeseries_file),pointer :: next => null()
    contains
@@ -216,7 +216,7 @@
 !
 !-----------------------------------------------------------------------
 !BOC
-   if (.not.allocated(input%name)) &
+   if (input%name == '') &
       call fatal_error('input::register_profile_input', 'input has not had a name assigned')
 
    if (nlev==-1) call fatal_error('input::register_profile_input', 'input module has not been initialized with depth information; &
@@ -226,12 +226,12 @@
 
    allocate(input%data(0:nlev))
    if (input%method == input%method_constant) then
-      LEVEL2 'Using constant ' // input%name // '= ', input%constant_value
+      LEVEL2 'Using constant ' // trim(input%name) // ' = ', input%constant_value
       input%data = input%constant_value
    elseif (input%method == input%method_file) then
       if (input%path=='') call fatal_error('input::register_profile_input', 'Empty file path specified to read variable '//input%name//' from.')
 
-      LEVEL2 'Reading ' // input%name // ' from:'
+      LEVEL2 'Reading ' // trim(input%name) // ' from:'
       LEVEL3 trim(input%path)
       if (input%scale_factor /= 1) LEVEL3 'applying scale factor = ', input%scale_factor
 
@@ -286,18 +286,18 @@
 !
 !-----------------------------------------------------------------------
 !BOC
-   if (.not.allocated(input%name)) &
+   if (input%name == '') &
       call fatal_error('input::register_scalar_input', 'input has not had a name assigned')
 
    call scalar_inputs%add(input)
 
    if (input%method == input%method_constant) then
-      LEVEL2 'Using constant ' // input%name // '= ', input%constant_value
+      LEVEL2 'Using constant ' // trim(input%name) // ' = ', input%constant_value
       input%value = input%constant_value
    elseif (input%method == input%method_file) then
       if (input%path=='') call fatal_error('input::register_scalar_input', 'Empty file path specified to read variable '//input%name//' from.')
 
-      LEVEL2 'Reading ' // input%name // ' from:'
+      LEVEL2 'Reading ' // trim(input%name) // ' from:'
       LEVEL3 trim(input%path)
       if (input%scale_factor /= 1) LEVEL3 'applying scale factor = ', input%scale_factor
 

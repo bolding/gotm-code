@@ -44,6 +44,7 @@
    integer,           public           :: timefmt
    integer,parameter, public           :: timestepkind = selected_int_kind(12)
    integer(kind=timestepkind), public  :: MinN,MaxN
+   integer, public                     :: jul1,secs1
    integer, public                     :: jul2,secs2
 !
 ! !REVISION HISTORY:
@@ -68,10 +69,6 @@
    subroutine init_time(MinN,MaxN)
 !
 ! !DESCRIPTION:
-!  The subroutine {\tt init\_time()} initialises the time module by reading
-!  a namelist and take actions according to the specifications.
-!  On exit from this subroutine the two variables MinN and MaxN have well
-!  defined values and can be used in the time loop.
 !
 ! !USES:
    IMPLICIT NONE
@@ -85,13 +82,12 @@
 !EOP
 !
 ! !LOCAL VARIABLES:
-   integer                    :: jul1,secs1
    integer(kind=timestepkind) :: nsecs
    integer                    :: ndays
 !
 !-------------------------------------------------------------------------
 !BOC
-!  Read time specific things from the namelist.
+!  Read time specific things from the gotm.yaml
 !
    LEVEL1 'init_time'
 !

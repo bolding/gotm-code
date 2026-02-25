@@ -10,7 +10,7 @@
 ! !DESCRIPTION:
 !  This subroutine calculates vertical velocity profiles, if
 !  {\tt w\_adv\_method} is 1 or 2, which has to be chosen in the
-!  {\tt w\_advspec} namelist in {\tt obs.nml}. The profiles of vertical
+!  {\tt w\_advspec} in {\tt gotm.yaml}. The profiles of vertical
 !  velocity are determined by two values,
 !  the height of maximum absolute value of vertical velocity, {\tt w\_height},
 !  and the vertical velocity at this height, {\tt w\_adv}. From {\tt w\_height},
@@ -19,7 +19,7 @@
 !
 ! !USES:
    use meanflow    , only: zi,w
-   use observations, only: w_adv,w_height
+   use observations, only: w_adv_input,w_height_input
    IMPLICIT NONE
 !
 ! !INPUT PARAMETERS:
@@ -39,20 +39,20 @@
 
 !  Vertical velocity calculation:
 
-   select case(w_adv%method)
+   select case(w_adv_input%method)
       case(0)
          ! no vertical advection
       case(1,2)
          ! linearly varying advection velocity with peak at "w_height"
          z_crit=zi(nlev)-0.01*(zi(nlev)-zi(0))
-         if (w_height%value.gt.z_crit) w_height%value=z_crit
+         if (w_height_input%value.gt.z_crit) w_height_input%value=z_crit
          z_crit=zi(0)+0.01*(zi(nlev)-zi(0))
-         if (w_height%value.lt.z_crit) w_height%value=z_crit
+         if (w_height_input%value.lt.z_crit) w_height_input%value=z_crit
          do i=1,nlev-1
-            if (zi(i).gt.w_height%value) then
-               w(i)=(zi(nlev)-zi(i))/(zi(nlev)-w_height%value)*w_adv%value
+            if (zi(i).gt.w_height_input%value) then
+               w(i)=(zi(nlev)-zi(i))/(zi(nlev)-w_height_input%value)*w_adv_input%value
             else
-               w(i)=(zi(0)-zi(i))/(zi(0)-w_height%value)*w_adv%value
+               w(i)=(zi(0)-zi(i))/(zi(0)-w_height_input%value)*w_adv_input%value
             end if
          end do
          w(0)    =_ZERO_

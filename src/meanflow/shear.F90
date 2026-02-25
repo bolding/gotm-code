@@ -111,6 +111,8 @@
 ! !USES:
    use meanflow,   only: h,u,v,uo,vo
    use meanflow,   only: SS,SSU,SSV
+   use meanflow,     only: SSCSTK, SSSTK
+   use stokes_drift, only: dusdz, dvsdz
 
    IMPLICIT NONE
 !
@@ -158,6 +160,13 @@
 
       SS(i) = SSU(i) + SSV(i)
 
+      ! Stokes-Eulerian cross-shear
+      SSCSTK(i) =   dusdz%data(i) * (u(i+1)-u(i)) / (0.5*(h(i+1)+h(i))) &
+                  + dvsdz%data(i) * (v(i+1)-v(i)) / (0.5*(h(i+1)+h(i)))
+
+      ! Stokes shear squared
+      SSSTK(i) = dusdz%data(i)**2 + dvsdz%data(i)**2
+
    end do
 
    SSU(0   ) = SSU(1    )
@@ -168,6 +177,12 @@
 
    SS (0   ) = SS (1    )
    SS (nlev) = SS (nlev-1)
+
+   SSCSTK(0   ) = SSCSTK(1     )
+   SSCSTK(nlev) = SSCSTK(nlev-1)
+
+   SSSTK (0   ) = SSSTK (1     )
+   SSSTK (nlev) = SSSTK (nlev-1)
 
    return
    end subroutine shear

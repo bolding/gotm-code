@@ -14,11 +14,14 @@
 ! \begin{equation}
 !   \label{MY}
 !   \dot{\overline{q^2 l}}
-!   = {\cal D}_l + l ( E_1  P + E_3 G - E_2  F \epsilon )
+!   = {\cal D}_l + l ( E_1  P + E_3 G + E_x P_x + E_6 P_s - E_2  F \epsilon )
 !   \comma
 ! \end{equation}
 ! where $\dot{\overline{q^2 l}}$ denotes the material derivative of $q^2 l$.
-! The production terms $P$ and $G$ follow from \eq{PandG}, and $\epsilon$
+! The production terms $P$ and $G$ follow from \eq{PandG}.
+! $P_s$ is Stokes shear production defined in \eq{computePs}
+! and $P_x$ accounts for extra turbulence production.
+! $\epsilon$
 ! can be computed either directly from \eq{epsilonMY}, or from \eq{epsilon}
 ! with the help \eq{B1}.
 !
@@ -31,7 +34,7 @@
 ! $\kappa$ being the von K{\'a}rm{\'a}n constant and ${\cal L}_z$ some
 ! measure for the distance from the wall. Different possiblities
 ! for  ${\cal L}_z$ are implemented in GOTM, which can be activated
-! be setting the parameter {\tt MY\_length} in {\tt gotmturb.nml} to
+! be setting the parameter {\tt MY\_length} in {\tt gotm.yaml} to
 ! appropriate values. Close to the wall, however, one always has
 ! ${\cal L}_z= \overline{z}$, where $\overline{z}$ is the distance from
 ! the wall.
@@ -45,7 +48,7 @@
 ! \end{equation}
 ! where $S_l$ is a constant of the model. The values for the model
 ! constants recommended by \cite{MellorYamada82} are displayed in
-! \tab{tab:MY_constants}. They can be set in {\tt gotmturb.nml}. Note,
+! \tab{tab:MY_constants}. They can be set in {\tt gotm.yaml}. Note,
 ! that the parameter $E_3$ in stably stratifed flows is in principle
 ! a function of the so-called steady state Richardson-number,
 ! as discussed by \cite{Burchard2001c}, see discussion in the context
@@ -64,15 +67,15 @@
 !
 ! At the end of this routine the length-scale can be constrained according to a
 ! suggestion of \cite{Galperinetal88}. This feature is optional and can be activated
-! by setting {\tt length\_lim = .true.} in {\tt gotmturb.nml}.
+! by setting {\tt length\_lim = .true.} in {\tt gotm.yaml}.
 !
 ! !USES:
-   use turbulence, only: P,B
+   use turbulence, only: P,B,Px,PSTK
    use turbulence, only: tke,tkeo,k_min,eps,eps_min,L
-   use turbulence, only: kappa,e1,e2,e3,b1
+   use turbulence, only: kappa,e1,e2,e3,ex,e6,b1
    use turbulence, only: MY_length,cm0,cde,galp,length_lim
    use turbulence, only: q2l_bc, psi_ubc, psi_lbc, ubc_type, lbc_type
-   use turbulence, only: sl
+   use turbulence, only: sl_var
    use util,       only: Dirichlet,Neumann
 
    IMPLICIT NONE
@@ -135,11 +138,7 @@
 !  some quantities in Mellor-Yamada notation
    do i=1,nlev-1
       q2l(i)=2.*tkeo(i)*L(i)
-#ifdef _HARCOURT_QINGLI_
       q3 (i)=sqrt(8.*tkeo(i)*tkeo(i)*tkeo(i))
-#else
-      q3 (i)=sqrt(8.*tke(i)*tke(i)*tke(i))
-#endif
    end do
 
 !  diagnostic length scale for wall function
@@ -160,15 +159,10 @@
    do i=1,nlev-1
 
 !     compute diffusivity
-
-#ifdef _HARCOURT_QINGLI_
-      avh(i)      =  sl*sqrt(2.*tkeo(i))*L(i)
-#else
-      avh(i)      =  sl*sqrt(2.*tke(i))*L(i)
-#endif
+      avh(i)      =  sl_var(i) * sqrt(2.*tkeo(i))*L(i)
 
 !     compute production terms in q^2 l - equation
-      prod        =  e1*L(i)*P(i)
+      prod        =  L(i) * ( e1*P(i) + ex*Px(i) + e6*PSTK(i) )
       buoyan      =  e3*L(i)*B(i)
       diss        =  q3(i)/b1*(1.+e2*(L(i)/Lz(i))*(L(i)/Lz(i)))
 
@@ -243,11 +237,11 @@
         if (L(i).gt.Lcrit) L(i)=Lcrit
      end if
 
-!    compute dissipation rate
-     eps(i) = cde*sqrt(tke(i)*tke(i)*tke(i))/L(i)
-
 !    check for very small lengh scale
      if (L(i).lt.l_min) L(i)=l_min
+
+!    compute dissipation rate
+     eps(i) = cde*sqrt(tke(i)*tke(i)*tke(i))/L(i)
 
 !    substitute minimum value
      if (eps(i).lt.eps_min) then

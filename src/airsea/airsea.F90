@@ -27,10 +27,10 @@
 !  of bulk formulae from observed or modelled meteorological
 !  parameters and the solar radiation may be calculated
 !  from longitude, latitude, time and cloudiness.
-!  Albedo correction is applied according to a namelist variable.
+!  Albedo correction is applied according to a configuration variable.
 !  For the prescibed fluxes and solar radiation,
 !  values may be constant or read in from files. All necessary
-!  setting have to be made in the namelist file {\tt airsea.nml}.
+!  setting have to be made in {\tt gotm.yaml}.
 !
 ! !USES:
    use airsea_variables
@@ -55,7 +55,6 @@
 #endif
 
    interface init_airsea
-      module procedure init_airsea_nml
       module procedure init_airsea_yaml
    end interface
 
@@ -63,37 +62,40 @@
 ! !PUBLIC DATA MEMBERS:
 !
 !  Meteorological forcing variables
-   integer,  public                    :: hum_method
-   character(len=PATH_MAX)   :: meteo_file
-   type (type_scalar_input), public, target            :: u10,v10
-   type (type_scalar_input), public, target            :: airp,airt
-   type (type_scalar_input), public, target            :: hum
-   type (type_scalar_input), public, target            :: cloud
+   integer,  public :: shortwave_type
+   integer,  public :: longwave_type
+   integer,  public :: hum_method
+   character(len=PATH_MAX) :: meteo_file
+   type (type_scalar_input), public, target :: u10_input,v10_input
+   type (type_scalar_input), public, target :: airp_input
+   type (type_scalar_input), public, target :: airt_input
+   type (type_scalar_input), public, target :: hum_input
+   type (type_scalar_input), public, target :: cloud_input
 !
 !  wind speed (m/s)
    REALTYPE, public, target            :: w
 !
 !  surface shortwave radiation
 !  and surface heat flux (W/m^2)
-   type (type_scalar_input), public, target :: I_0, ql
-   REALTYPE, public, target            :: albedo
-   type (type_scalar_input), public, target            :: heat
-   REALTYPE, public                    :: qe,qh
+   type (type_scalar_input), public, target :: I_0, ql_input
+   REALTYPE, public, target :: albedo
+   type (type_scalar_input), public, target :: heat_input
+   REALTYPE, public :: qe,qh
 
 !  surface stress components (Pa)
    REALTYPE, public, target                 :: tx,ty
-   type (type_scalar_input), public, target :: tx_,ty_
+   type (type_scalar_input), public, target :: tx_input,ty_input
 
 !  precipitation and  evaporation
 !  (m/s)
-   type (type_scalar_input), public, target            :: precip
-   REALTYPE, public, target            :: evap
+   type (type_scalar_input), public, target :: precip_input
+   REALTYPE, public, target :: evap
 
 !  sea surface temperature (degC), sea surface salinity (psu),
 !  sea surface current components (m/s)
    REALTYPE, public                    :: sst
-   type (type_scalar_input), public, target            :: sst_obs
-   type (type_scalar_input), public, target            :: sss
+   type (type_scalar_input), public, target            :: sst_obs_input
+   type (type_scalar_input), public, target            :: sss_input
    REALTYPE, public                    :: ssu
    REALTYPE, public                    :: ssv
 
@@ -152,240 +154,28 @@
 ! !IROUTINE: Initialise the air--sea interaction module \label{sec:init-air-sea}
 !
 ! !INTERFACE:
-   subroutine init_airsea_nml(namlst, fn)
-!
-! !DESCRIPTION:
-!  This routine initialises the air-sea module by reading various variables
-!  from the namelist {\tt airsea.nml} and opens relevant files.
-!  These parameters are:
-!
-!  \begin{tabular}{ll}
-! {\tt calc\_fluxes}     & {\tt .true.}: Sensible, latent and back-radiation are calculated by    \\
-!                          & means of bulk formulae. In this case, {\tt meteo\_file} must be      \\
-!                          & given and {\tt hum\_method} must be specified.                         \\
-!                          & {\tt .false.}: Surface fluxes and solar radiation are prescribed.      \\
-! {\tt fluxes\_method}   & Select which parameterisation to use for latent and sensible fluxes:   \\
-!                          & 1: Kondo (1975)                                                        \\
-!                          & 2: Fairall et al. (1996)                                               \\
-! {\tt back\_radiation\_method}   & Select which parameterisation to use:                        \\
-!                          & 1: Clark et al. (1974)                                                 \\
-!                          & 2: Hastenrath and Lamb (1978)                                          \\
-!                          & 3: Bignami et al. (1995)                                               \\
-!                          & 4: Berliandand Berliand (1952)                                         \\
-!                          & 5: Josey et al. (2003) - 1                                         \\
-!                          & 6: Josey et al. (2003) - 2                                         \\
-! {\tt meteo\_file}      & file with meteo data (for {\tt calc\_fluxes=.true.}) with            \\
-!                          & date: {\tt yyyy-mm-dd hh:mm:ss}                                        \\
-!                          & $x$-component of wind (10 m) in m\,s$^{-1}$                            \\
-!                          & $y$-component of wind (10 m) in m\,s$^{-1}$                            \\
-!                          & air pressure (2 m) in hectopascal                                      \\
-!                          & dry air temperature (2 m) in Celsius                                   \\
-!                          & rel. hum. in \% or wet bulb temp. in C or dew point temp. in C         \\
-!                          & cloud cover in 1/10                                                    \\
-!                          & Example:                                                               \\
-!                          & {\tt 1998-01-01 00:00:00    6.87  10.95 1013.0   6.80   73.2   0.91}   \\
-! {\tt hum\_method}        & 1: relative humidity in \% given as 7.\ column in {\tt meteo\_file}        \\
-!                          & 2: wet bulb temperature in Celsius given as 7. column in {\tt meteo\_file}  \\
-!                          & 3: dew point temperature in Celsius given as 7. column in {\tt meteo\_file} \\
-!                          & 4: specific humidity in kg\,kg$^{-1}$ given as 7. column in {\tt meteo\_file} \\
-! {\tt heat\_method}     & 0: heat flux not prescribed                                            \\
-!                          & 1: constant value for short wave radiation ({\tt const\_swr})        \\
-!                          &    and surface heat flux ({\tt const\_qh})                           \\
-!                          & 2: {\tt swr}, {\tt heat} are read from {\tt heatflux\_file}          \\
-! {\tt rain\_impact}     & {\tt .true.}: include sensible- and momentum-flux from precipitation   \\
-! {\tt calc\_evaporation}& {\tt .true.}: calculate evaporation/condensation (m/s)                 \\
-! {\tt swr\_method}      & 1: constant value for short wave radiation ({\tt const\_swr})        \\
-!                          & 2: read short wave radiation from file                                 \\
-!                          & 3: Solar radiation is calculated from time, longitude, latitude,       \\
-!                          & and cloud cover.                                                       \\
-! {\tt albedo\_method}    & 0=const, 1=Payne, 2=Cogley \\
-! {\tt const\_albedo}     & used if {tt albedo\_method}=0 - must be <= 1.0    \\
-! {\tt const\_swr}       & constant value for short wave radiation in W\,m$^{-2}$                 \\
-!                          & (always positive)                                                      \\
-! {\tt swr\_file}        & file with short wave radiation in W\,m$^{-2}$                          \\
-! {\tt swr\_factor}      & scales data read from file to  W\,m$^{-2}$ - defaults to 1             \\
-! {\tt shf\_factor}      & scales surface heat fluxes - defaults to 1                             \\
-! {\tt const\_heat }     & constant value for surface heat flux in  W\,m$^{-2}$                   \\
-!                          & (negative for heat loss)                                               \\
-! {\tt heatflux\_file}   & file with date and {\tt heat} in W\,m$^{-2}$                           \\
-! {\tt momentum\_method} & 0: momentum flux not prescribed                                        \\
-!                          & 1: constant momentum fluxes {\tt const\_tx}, {\tt const\_tx} given \\
-!                          & 2: surface momentum fluxes given from file {\tt momentumflux\_file}  \\
-! {\tt const\_tx}        & $x$-component of constant surface momentum flux in N\,m$^{-2}$         \\
-! {\tt const\_ty}        & $y$-component of constant surface momentum flux in N\,m$^{-2}$         \\
-! {\tt momentumflux\_file} & File with date, {\tt tx} and {\tt ty} given                          \\
-! {\tt precip\_method}   & 0: precipitation not included == precip=0.                             \\
-!                          & 1: constant value for precipitation in  m\,s$^{-1}$                    \\
-!                          & 2: values for precipitation read from file {\tt precip\_file}         \\
-! {\tt const\_precip}    & value for precip in m\,s$^{-1}$                                        \\
-! {\tt precip\_file}     & file with date and {\tt precip} in m\,s$^{-1}$                         \\
-! {\tt precip\_factor}   & scales data read from file to  m\,s$^{-1}$ - defaults to 1             \\
-! {\tt sst\_method}      & 0: no independent SST observation is read from file                    \\
-!                          & 2: independent SST observation is read from file, only for output      \\
-! {\tt sst\_file}        & file with date and SST (sea surface temperature) in Celsius            \\
-! {\tt sss\_method}      & 0: no independent SSS observation is read from file                    \\
-!                          & 2: independent SSS observation is read from file, only for output      \\
-! {\tt sss\_file}        & file with date and SSS (sea surface salinity) in psu                   \\
-!  \end{tabular}
-!
-! !USES:
-   IMPLICIT NONE
-!
-! !INPUT PARAMETERS:
-   integer, intent(in)                 :: namlst
-   character(len=*), intent(in)        :: fn
-!
-! !REVISION HISTORY:
-!  Original author(s): Karsten Bolding
-!
-! !LOCAL VARIABLES:
-   logical                   :: calc_fluxes
-   integer :: swr_method
-   REALTYPE                  :: const_swr
-   REALTYPE                  :: swr_factor
-   character(len=PATH_MAX)   :: swr_file
-
-   integer                   :: momentum_method
-   integer                   :: precip_method
-   integer                   :: sst_method
-   integer                   :: sss_method
-   character(len=PATH_MAX)   :: back_radiation_file
-   character(len=PATH_MAX)   :: heatflux_file
-   character(len=PATH_MAX)   :: momentumflux_file
-   character(len=PATH_MAX)   :: precip_file
-   character(len=PATH_MAX)   :: sss_file
-   character(len=PATH_MAX)   :: sst_file
-
-   REALTYPE                  :: wind_factor
-   REALTYPE                  :: shf_factor
-   REALTYPE                  :: const_heat
-   REALTYPE                  :: const_tx,const_ty
-   REALTYPE                  :: const_precip
-   REALTYPE                  :: precip_factor
-   integer                   :: back_radiation_method
-   integer                   :: heat_method
-
-   namelist /airsea/ calc_fluxes, &
-                     fluxes_method, &
-                     back_radiation_method, &
-                     meteo_file, &
-                     wind_factor, &
-                     hum_method, &
-                     heat_method, &
-                     rain_impact, &
-                     calc_evaporation, &
-                     swr_method,albedo_method,const_albedo,const_swr,swr_file,swr_factor, &
-                     back_radiation_file, &
-                     shf_factor,const_heat, &
-                     heatflux_file, &
-                     momentum_method, &
-                     const_tx,const_ty, &
-                     momentumflux_file, &
-                     precip_method,const_precip,precip_file,precip_factor,&
-                     sst_method, sst_file, &
-                     sss_method, sss_file, &
-                     ssuv_method
-!EOP
-!-----------------------------------------------------------------------
-!BOC
-   LEVEL1 'init_airsea_nml'
-
-!  initialize namelist variables to reasonable defaults.
-   calc_fluxes=.false.
-   ssuv_method=0
-   fluxes_method=1
-   back_radiation_method=1
-   meteo_file = ''
-   wind_factor=_ONE_
-   hum_method = 0
-   heat_method = 0
-   rain_impact=.false.
-   calc_evaporation=.false.
-   swr_method=0
-   albedo_method=1
-   const_swr=_ZERO_
-   swr_file = ''
-   swr_factor=_ONE_
-   back_radiation_file = ''
-   shf_factor=_ONE_
-   const_heat = _ZERO_
-   heatflux_file = ''
-   momentum_method = 0
-   const_tx = _ZERO_
-   const_ty = _ZERO_
-   momentumflux_file = ''
-   precip_method=0
-   const_precip=_ZERO_
-   precip_file = ''
-   precip_factor=_ONE_
-   sst_method=0
-   sst_file = ''
-   sss_method=0
-   sss_file = ''
-
-!  Read namelist variables from file.
-   open(namlst,file=fn,action='read',status='old',err=90)
-   read(namlst,nml=airsea,err=91)
-   close(namlst)
-
-   call I_0%configure(method=swr_method, path=swr_file, index=1, constant_value=const_swr, scale_factor=swr_factor)
-
-   call u10%configure(method=2, path=meteo_file, index=1, scale_factor=wind_factor)
-   call v10%configure(method=2, path=meteo_file, index=2, scale_factor=wind_factor)
-   call airp%configure(method=2, path=meteo_file, index=3, scale_factor=100.d0)
-   call airt%configure(method=2, path=meteo_file, index=4)
-   call hum%configure(method=2, path=meteo_file, index=5)
-   call cloud%configure(method=2, path=meteo_file, index=6)
-
-   call tx_%configure(method=momentum_method, path=momentumflux_file, index=1, constant_value=const_tx)
-   call ty_%configure(method=momentum_method, path=momentumflux_file, index=2, constant_value=const_ty)
-   call heat%configure(method=heat_method, path=heatflux_file, index=1, scale_factor=shf_factor, constant_value=const_heat)
-   call ql%configure(method=back_radiation_method, path=back_radiation_file, index=1)
-   call sst_obs%configure(method=sst_method, path=sst_file, index=1)
-   call sss%configure(method=sss_method, path=sss_file, index=1)
-   call precip%configure(method=precip_method, path=precip_file, index=1, scale_factor=precip_factor, constant_value=const_precip)
-
-   if (.not. calc_fluxes) fluxes_method = 0
-
-   LEVEL2 'done'
-   return
-
-90 FATAL 'I could not open ' // fn
-   stop 'init_airsea'
-91 FATAL 'I could not read airsea namelist'
-   stop 'init_airsea'
-
-   end subroutine init_airsea_nml
-!EOC
-
-!-----------------------------------------------------------------------
-!BOP
-!
-! !IROUTINE: Initialise the air--sea interaction module \label{sec:init-air-sea}
-!
-! !INTERFACE:
    subroutine init_airsea_yaml()
 !
 ! !DESCRIPTION:
 !  This routine initialises the air-sea module by reading various variables
-!  from the namelist {\tt airsea.nml} and opens relevant files.
+!  from {\tt gotm.yaml} and opens relevant files.
 !  These parameters are:
 !
 !  \begin{tabular}{ll}
-! {\tt calc\_fluxes}     & {\tt .true.}: Sensible, latent and back-radiation are calculated by    \\
+! {\tt calc\_fluxes}     & {\tt .true.}: Sensible, latent and longwave-radiation are calculated by    \\
 !                          & means of bulk formulae. In this case, {\tt meteo\_file} must be      \\
 !                          & given and {\tt hum\_method} must be specified.                         \\
 !                          & {\tt .false.}: Surface fluxes and solar radiation are prescribed.      \\
 ! {\tt fluxes\_method}   & Select which parameterisation to use for latent and sensible fluxes:   \\
 !                          & 1: Kondo (1975)                                                        \\
 !                          & 2: Fairall et al. (1996)                                               \\
-! {\tt back\_radiation\_method}   & Select which parameterisation to use:                        \\
-!                          & 1: Clark et al. (1974)                                                 \\
-!                          & 2: Hastenrath and Lamb (1978)                                          \\
-!                          & 3: Bignami et al. (1995)                                               \\
-!                          & 4: Berliandand Berliand (1952)                                         \\
-!                          & 5: Josey et al. (2003) - 1                                         \\
-!                          & 6: Josey et al. (2003) - 2                                         \\
+! {\tt longwave\_radiation\_method}   & Select which parameterisation to use:                        \\
+!                          & 3: Clark et al. (1974)                                                 \\
+!                          & 4: Hastenrath and Lamb (1978)                                          \\
+!                          & 5: Bignami et al. (1995)                                               \\
+!                          & 6: Berliandand Berliand (1952)                                         \\
+!                          & 7: Josey et al. (2003) - 1                                         \\
+!                          & 8: Josey et al. (2003) - 2                                         \\
 ! {\tt meteo\_file}      & file with meteo data (for {\tt calc\_fluxes=.true.}) with            \\
 !                          & date: {\tt yyyy-mm-dd hh:mm:ss}                                        \\
 !                          & $x$-component of wind (10 m) in m\,s$^{-1}$                            \\
@@ -459,31 +249,31 @@
    twig => branch%get_typed_child('fluxes', 'heat and momentum fluxes')
    call twig%get(fluxes_method, 'method', 'method to calculate fluxes from meteorological conditions', &
                 options=(/option(0, 'use prescribed fluxes', 'off'), option(1, 'Kondo (1975)', 'kondo'), option(2, 'Fairall et al. (1996)', 'fairall')/), default=0)
-   call twig%get(heat, 'heat', 'prescribed total heat flux (sensible, latent and net back-radiation)', 'W/m^2', &
+   call twig%get(heat_input, 'heat', 'prescribed total heat flux (sensible, latent and net longwave-radiation)', 'W/m^2', &
                 default=0._rk)
-   call twig%get(tx_, 'tx', 'prescribed momentum flux in West-East direction', 'Pa', &
+   call twig%get(tx_input, 'tx', 'prescribed momentum flux in West-East direction', 'Pa', &
                 default=0._rk)
-   call twig%get(ty_, 'ty', 'prescribed momentum flux in South-North direction', 'Pa', &
+   call twig%get(ty_input, 'ty', 'prescribed momentum flux in South-North direction', 'Pa', &
                 default=0._rk)
 
-   call branch%get(u10, 'u10', 'wind speed in West-East direction @ 10 m', 'm/s', &
+   call branch%get(u10_input, 'u10', 'wind speed in West-East direction @ 10 m', 'm/s', &
                 default=0._rk)
-   call branch%get(v10, 'v10', 'wind speed in South-North direction @ 10 m', 'm/s', &
+   call branch%get(v10_input, 'v10', 'wind speed in South-North direction @ 10 m', 'm/s', &
                 default=0._rk)
    call branch%get(ssuv_method, 'ssuv_method', 'wind treatment', &
                 options=(/option(0, 'use absolute wind speed', 'absolute'), option(1, 'use wind speed relative to current velocity', 'relative')/), default=1, display=display_advanced)
-   call branch%get(airp, 'airp', 'air pressure', 'Pa', &
+   call branch%get(airp_input, 'airp', 'air pressure', 'Pa', &
                 default=0._rk)
-   call branch%get(airt, 'airt', 'air temperature @ 2 m', 'Celsius or K', &
+   call branch%get(airt_input, 'airt', 'air temperature @ 2 m', 'Celsius or K', &
                 default=0._rk)
-   call branch%get(hum, 'hum', 'humidity @ 2 m', '', &
+   call branch%get(hum_input, 'hum', 'humidity @ 2 m', '', &
                 default=0._rk, pchild=leaf)
    call leaf%get(hum_method, 'type', 'humidity metric', &
                 options=(/option(1, 'relative humidity (%)', 'relative'), option(2, 'wet-bulb temperature', 'wet_bulb'), &
                 option(3, 'dew point temperature', 'dew_point'), option(4 ,'specific humidity (kg/kg)', 'specific')/), default=1)
-   call branch%get(cloud, 'cloud', 'cloud cover', '1', &
+   call branch%get(cloud_input, 'cloud', 'cloud cover', '1', &
                 minimum=0._rk, maximum=1._rk, default=0._rk)
-   call branch%get(precip, 'precip', 'precipitation', 'm/s', &
+   call branch%get(precip_input, 'precip', 'precipitation', 'm/s', &
                 default=0._rk, pchild=leaf)
    call leaf%get(rain_impact, 'flux_impact', 'include effect on fluxes of sensible heat and momentum', &
                 default=.false.)
@@ -491,10 +281,14 @@
                 default=.false.)
 
    call branch%get(I_0, 'swr', 'shortwave radiation', 'W/m^2', &
-                minimum=0._rk,default=0._rk, extra_options=(/option(3, 'from time, location and cloud cover', 'calculate')/))
-   call branch%get(ql, 'longwave_radiation', 'net longwave radiation', 'W/m^2', &
-                default=0._rk, method_file=0, method_constant=method_unsupported, &
+                pchild=leaf, minimum=0._rk,default=0._rk, method_constant=1, method_file=2, extra_options=(/option(3, 'from time, location and cloud cover', 'calculate')/))
+   call leaf%get(shortwave_type, 'type', 'shortwave type from file', &
+     options=(/option(1, 'net shortwave radiation'), option(2, 'downward shortwave radiation')/), default=1)
+   call branch%get(ql_input, 'longwave_radiation', 'net longwave radiation', 'W/m^2', &
+                pchild=leaf, default=0._rk, method_file=2, &
                extra_options=(/option(CLARK, 'Clark et al. (1974)', 'Clark'), option(HASTENRATH_LAMB, 'Hastenrath and Lamb (1978)', 'Hastenrath_Lamb'), option(BIGNAMI, 'Bignami et al. (1995)', 'Bignami'), option(BERLIAND_BERLIAND, 'Berliand and Berliand (1952)', 'Berliand_Berliand'), option(JOSEY1, 'Josey et al. (2003) - 1', 'Josey1'), option(JOSEY2, 'Josey et al. (2003) - 2', 'Josey2')/), default_method=CLARK)
+   call leaf%get(longwave_type, 'type', 'longwave type from file', &
+     options=(/option(1, 'net longwave radiation'), option(2, 'downward longwave radiation')/), default=1)
 
    twig => branch%get_typed_child('albedo')
    call twig%get(albedo_method, 'method', 'method to compute albedo', &
@@ -502,9 +296,9 @@
    call twig%get(const_albedo, 'constant_value', 'constant value to use throughout the simulation', '1', &
                 minimum=0._rk,maximum=1._rk,default=0._rk)
 
-   call branch%get(sst_obs, 'sst', 'observed surface temperature', 'Celsius', &
+   call branch%get(sst_obs_input, 'sst', 'observed surface temperature', 'Celsius', &
                 default=0._rk, display=display_advanced)
-   call branch%get(sss, 'sss', 'observed surface salinity', 'psu', &
+   call branch%get(sss_input, 'sss', 'observed surface salinity', 'psu', &
                 default=0._rk, display=display_advanced)
    LEVEL2 'done'
    return
@@ -521,18 +315,18 @@
 !
 ! !DESCRIPTION:
 !  This routine initialises the air-sea module by reading various variables
-!  from the namelist {\tt airsea.nml} and opens relevant files.
+!  from the {\tt gotm.yaml} and opens relevant files.
 !  These parameters are:
 !
 !  \begin{tabular}{ll}
-! {\tt calc\_fluxes}     & {\tt .true.}: Sensible, latent and back-radiation are calculated by    \\
+! {\tt calc\_fluxes}     & {\tt .true.}: Sensible, latent and longwave-radiation are calculated by    \\
 !                          & means of bulk formulae. In this case, {\tt meteo\_file} must be      \\
 !                          & given and {\tt hum\_method} must be specified.                         \\
 !                          & {\tt .false.}: Surface fluxes and solar radiation are prescribed.      \\
 ! {\tt fluxes\_method}   & Select which parameterisation to use for latent and sensible fluxes:   \\
 !                          & 1: Kondo (1975)                                                        \\
 !                          & 2: Fairall et al. (1996)                                               \\
-! {\tt back\_radiation\_method}   & Select which parameterisation to use:                        \\
+! {\tt longwave\_radiation\_method}   & Select which parameterisation to use:                        \\
 !                          & 1: Clark et al. (1974)                                                 \\
 !                          & 2: Hastenrath and Lamb (1978)                                          \\
 !                          & 3: Bignami et al. (1995)                                               \\
@@ -650,82 +444,98 @@
    dlon = lon
    dlat = lat
 
-!  The short wave radiation
-   select case (I_0%method)
-      case (3)
-         if (fluxes_method == 0) then
-            LEVEL2 'Not possible to calculate swr if heat and momentum fluxes are prescribed'
-            stop 'init_airsea'
-         else
-            LEVEL2 'Calculating swr=swr(t(lon),lat,cloud)'
-         end if
-         LEVEL2 'Albedo method: ',albedo_method
-      case default
-         call register_input(I_0)
-   end select
-
+   LEVEL1 'Air-sea fluxes:'
    if (fluxes_method /= 0) then
 
 #ifndef INTERPOLATE_METEO
       open(meteo_unit,file=meteo_file,action='read',status='old',err=93)
 #else
-      call register_input(u10)
-      call register_input(v10)
-      call register_input(airp)
-      call register_input(airt)
-      call register_input(hum)
-      call register_input(cloud)
+      call register_input(u10_input)
+      call register_input(v10_input)
+      call register_input(airp_input)
+      call register_input(airt_input)
+      call register_input(hum_input)
+      call register_input(cloud_input)
 #endif
-      LEVEL2 'Air-sea exchanges will be calculated'
 
-      LEVEL3 'heat- and momentum-fluxes:'
+      LEVEL2 'albedo method: ',albedo_method
+
+!  The short wave radiation
+      LEVEL2 'short wave radition:'
+      call register_input(I_0)
+      select case (I_0%method)
+         case(2)
+           select case (shortwave_type)
+               case(1)
+                  LEVEL3 'net shortwave radiation'
+               case(2)
+                  LEVEL3 'downward shortwave radiation'
+            end select
+         case (3)
+            LEVEL3 'swr=swr(t(lon),lat,cloud)'
+      end select
+
+      LEVEL2 'latent, sensible and momentum-fluxes:'
       select case (fluxes_method)
          case(1)
-            LEVEL4 'using Kondo formulation'
+            LEVEL3 'using Kondo formulation'
          case(2)
-            LEVEL4 'using Fairall et. all formulation'
+            LEVEL3 'using Fairall et. all formulation'
          case default
       end select
-      LEVEL3 'net longwave radiation:'
-      select case (ql%method)
-         case(0) ! Read from file instead of calculating
-            call register_input(ql)
+      select case (ql_input%method)
+         case(2)
+           call register_input(ql_input)
+           select case (longwave_type)
+               case(1)
+                  LEVEL3 'net longwave radiation'
+               case(2)
+                  LEVEL3 'downward longwave radiation'
+            end select
          case(CLARK)
-            LEVEL4 'using Clark formulation'
+            LEVEL2 'longwave radiation:'
+            LEVEL3 'using Clark formulation'
          case(HASTENRATH_LAMB)
-            LEVEL4 'using Hastenrath formulation'
+            LEVEL2 'longwave radiation:'
+            LEVEL3 'using Hastenrath formulation'
          case(BIGNAMI)
-            LEVEL4 'using Bignami formulation'
+            LEVEL2 'longwave radiation:'
+            LEVEL3 'using Bignami formulation'
          case(BERLIAND_BERLIAND)
-            LEVEL4 'using Berliand formulation'
+            LEVEL2 'longwave radiation:'
+            LEVEL3 'using Berliand formulation'
          case(JOSEY1)
-            LEVEL4 'using Josey-1 formulation'
+            LEVEL2 'longwave radiation:'
+            LEVEL3 'using Josey-1 formulation'
          case(JOSEY2)
-            LEVEL4 'using Josey-2 formulation'
+            LEVEL2 'longwave radiation:'
+            LEVEL3 'using Josey-2 formulation'
          case default
       end select
 
    else
 
+      LEVEL2 'Air-sea exchanges will be read from file(s)'
+      call register_input(I_0)
 !     The heat fluxes
-      call register_input(heat)
+      call register_input(heat_input)
 
 !     The momentum fluxes
-      call register_input(tx_)
-      call register_input(ty_)
+      call register_input(tx_input)
+      call register_input(ty_input)
 
    end if
 
 !  The fresh water fluxes (used with prescribed and calculated fluxes of heat/momentum)
-   call register_input(precip)
+   call register_input(precip_input)
    LEVEL2 'rain_impact=      ',rain_impact
    LEVEL2 'calc_evaporation= ',calc_evaporation
 
 !  The observed sea surface temperature
-   call register_input(sst_obs)
+   call register_input(sst_obs_input)
 
 !  The observed sea surface salinity
-   call register_input(sss)
+   call register_input(sss_input)
    LEVEL2 'done'
    return
 
@@ -737,6 +547,10 @@
 
 !-----------------------------------------------------------------------
 !BOP
+!
+! !IROUTINE: surface_fluxes
+!
+! !INTERFACE:
    subroutine surface_fluxes(surface_temp,sensible,latent,longwave_radiation)
 !
 ! !USES:
@@ -759,7 +573,7 @@
       STDERR 'Stefan# ',qh/qe
    end if
 #endif
-   longwave_radiation = ql%value
+   longwave_radiation = ql_input%value
    return
    end subroutine surface_fluxes
 !EOC
@@ -777,8 +591,8 @@
 !  Depending on the value of the boolean variable {\tt calc\_fluxes},
 !  the subroutines for the calculation of the fluxes
 !  and the short wave radiation are
-!  called or the fluxes are directly read in from the namelist
-!  {\tt airsea.nml} as constants or read in from files.
+!  called or the fluxes are directly read in from 
+!  {\tt gotm.yaml} as constants or read in from files.
 !  Furthermore, the surface freshwater flux is set to a constant
 !  value or is read in from a file.
 !
@@ -812,12 +626,12 @@
          hh = secs*(_ONE_/3600)
          zenith_angle = solar_zenith_angle(yearday,hh,dlon,dlat)
          have_zenith_angle = .true.
-         I_0%value = I_0%scale_factor*shortwave_radiation(zenith_angle,yearday,dlon,dlat,cloud%value)
+         I_0%value = I_0%scale_factor*shortwave_radiation(zenith_angle,yearday,dlon,dlat,cloud_input%value)
       end if
-      heat%value = heat%scale_factor*heat%value
+      heat_input%value = heat_input%scale_factor*heat_input%value
    end if
 
-   if (I_0%method .ne. CONSTVAL) then
+   if (I_0%method .eq. 3 .or. shortwave_type .eq. 2) then
       if (.not. have_zenith_angle) then
          hh = secs*(_ONE_/3600)
          zenith_angle = solar_zenith_angle(yearday,hh,dlon,dlat)
@@ -829,12 +643,12 @@
       end if
    end if
 
-   tx = tx_%value*bio_drag_scale
-   ty = ty_%value*bio_drag_scale
+   tx = tx_input%value*bio_drag_scale
+   ty = ty_input%value*bio_drag_scale
 
 !  If reading SST from file, overwrite current (model) SST with observed value,
 !  to be used in output.
-   if (sst_obs%method==FROMFILE) sst = sst_obs%value
+   if (sst_obs_input%method==FROMFILE) sst = sst_obs_input%value
 
 #ifndef INTERPOLATE_METEO
    if (init_saved_vars) init_saved_vars = .false.
@@ -886,7 +700,7 @@
 !  in  {\tt meteo\_file} the
 !  fluxes of heat and momentum, and the net
 !  longwave radiation by calling the routines {\tt humidity},
-!  {\tt back\_radiation} and {\tt airsea\_fluxes}, see sections
+!  {\tt longwave\_radiation} and {\tt airsea\_fluxes}, see sections
 !  \sect{sec:humidity}, \sect{sec:back-rad}, and \sect{sec:airsea-fluxes},
 !  a wrapper routine for using the bulk fomulae from either \cite{Kondo75}
 !  or \cite{Fairalletal96a}. Afterwards, the airsea fluxes
@@ -952,11 +766,11 @@
          meteo_secs2 = hh*3600 + min*60 + ss
          if(time_diff(meteo_jul2,meteo_secs2,jul,secs) .gt. 0) EXIT
       end do
-      u10%value   = obs(1)*u10%scale_factor
-      v10%value   = obs(2)*v10%scale_factor
-      airp%value  = obs(3)*100. !kbk mbar/hPa --> Pa
-      airt%value  = obs(4)
-      hum%value   = obs(5)
+      u10_input%value   = obs(1)*u10_input%scale_factor
+      v10_input%value   = obs(2)*v10_input%scale_factor
+      airp_input%value  = obs(3)*100. !kbk mbar/hPa --> Pa
+      airt_input%value  = obs(4)
+      hum_input%value   = obs(5)
       cloud%value = obs(6)
 
       if (sst .lt. 100.) then
@@ -967,12 +781,12 @@
          tw_k= sst
       end if
 
-      if (airt%value .lt. 100.) then
-         ta_k  = airt%value + KELVIN
-         ta = airt%value
+      if (airt_input%value .lt. 100.) then
+         ta_k  = airt_input%value + KELVIN
+         ta = airt_input%value
       else
-         ta  = airt%value - KELVIN
-         ta_k = airt%value
+         ta  = airt_input%value - KELVIN
+         ta_k = airt_input%value
       end if
 
       h1     = h2
@@ -980,19 +794,28 @@
       ty1    = ty2
       cloud1 = cloud2
 
-      call humidity(hum_method,hum,airp,tw,ta)
-      if (ql%method .gt. 0) then
-         call longwave_radiation(ql%method, &
-                                 dlat,tw_k,ta_k,cloud,ql)
+      call humidity(hum_method,hum_input,airp_input,tw,ta)
+      if (ql_input%method .eq. 0) then
+         ! constant
+       elseif (ql_input%method .eq. 2) then
+         select case(longwave_type)
+            case(1)
+               ! already read in
+            case(2)
+               ql_input%value=ql_input%value-bolz*emiss*(tw**4)
+         end select
+      else  ! (ql_input%method .gt. 2) then
+         call longwave_radiation(ql_input%method, &
+                                 dlat,tw_k,ta_k,cloud_input%value,ql_input%value)
       end if
 #if 0
       call airsea_fluxes(fluxes_method,rain_impact,calc_evaporation, &
-                         tw,ta,u10%value-ssu,v10%value-ssv,precip%value,evap,tx2,ty2,qe,qh)
+                         tw,ta,u10_input%value-ssu,v10_input%value-ssv,precip_input%value,evap,tx2,ty2,qe,qh)
 #else
       call airsea_fluxes(fluxes_method, &
-                         tw,ta,u10%value-ssu,v10%value-ssv,precip%value,evap,tx2,ty2,qe,qh)
+                         tw,ta,u10_input%value-ssu,v10_input%value-ssv,precip_input%value,evap,tx2,ty2,qe,qh)
 #endif
-      h2     = ql%value+qe+qh
+      h2     = ql_input%value+qe+qh
       cloud2 = cloud%value
 
       if (init_saved_vars) then
@@ -1011,9 +834,9 @@
 
 !  Do the time interpolation
    t  = time_diff(jul,secs,meteo_jul1,meteo_secs1)
-   heat%value  = h1  + t*alpha(2)
-   tx_%value    = tx1 + t*alpha(3)
-   ty_%value    = ty1 + t*alpha(4)
+   heat_input%value  = h1  + t*alpha(2)
+   tx_input%value    = tx1 + t*alpha(3)
+   ty_input%value    = ty1 + t*alpha(4)
    cloud%value = cloud1 + t*alpha(5)
 #else
    if (sst .lt. 100.) then
@@ -1024,25 +847,35 @@
       tw_k= sst
    end if
 
-   if (airt%value .lt. 100.) then
-      ta_k  = airt%value + KELVIN
-      ta = airt%value
+   if (airt_input%value .lt. 100.) then
+      ta_k  = airt_input%value + KELVIN
+      ta = airt_input%value
    else
-      ta  = airt%value - KELVIN
-      ta_k = airt%value
+      ta  = airt_input%value - KELVIN
+      ta_k = airt_input%value
    end if
 
-   call humidity(hum_method,hum%value,airp%value,tw,ta)
-   if (ql%method .gt. 0) then
-      call longwave_radiation(ql%method, &
-                          dlat,tw_k,ta_k,cloud%value,ql%value)
-   endif
+   call humidity(hum_method,hum_input%value,airp_input%value,tw,ta)
+   if (ql_input%method .eq. 0) then
+      ! constant
+    elseif (ql_input%method .eq. 2) then
+      select case(longwave_type)
+         case(1)
+            ! already read in
+         case(2)
+            ql_input%value=ql_input%value-bolz*emiss*(tw_k**4)
+      end select
+   else  ! (ql_input%method .gt. 2) then
+      call longwave_radiation(ql_input%method, &
+                              dlat,tw_k,ta_k,cloud_input%value,ql_input%value)
+   end if
+
    call airsea_fluxes(fluxes_method, &
-                      tw,ta,u10%value-ssu,v10%value-ssv,precip%value,evap,tx_%value,ty_%value,qe,qh)
-   heat%value = (ql%value+qe+qh)
+                      tw,ta,u10_input%value-ssu,v10_input%value-ssv,precip_input%value,evap,tx_input%value,ty_input%value,qe,qh)
+   heat_input%value = (ql_input%value+qe+qh)
 #endif
 
-   w = sqrt((u10%value-ssu)*(u10%value-ssu)+(v10%value-ssv)*(v10%value-ssv))
+   w = sqrt((u10_input%value-ssu)*(u10_input%value-ssu)+(v10_input%value-ssv)*(v10_input%value-ssv))
 
    end subroutine flux_from_meteo
 !EOC
@@ -1071,11 +904,11 @@
 !EOP
 !-----------------------------------------------------------------------
 !BOC
-   int_precip= int_precip + dt*precip%value
+   int_precip= int_precip + dt*precip_input%value
    int_evap  = int_evap   + dt*evap
    int_fwf   = int_precip + int_evap
    int_swr   = int_swr    + dt*I_0%value
-   int_heat  = int_heat   + dt*heat%value
+   int_heat  = int_heat   + dt*heat_input%value
    int_total = int_swr    + int_heat
    return
    end subroutine integrated_fluxes

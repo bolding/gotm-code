@@ -77,9 +77,12 @@
 ! !IROUTINE:
 !
 ! !INTERFACE:
-   subroutine open_restart()
+   subroutine open_restart(fn)
 !
 ! !DESCRIPTION:
+
+! !INPUT PARAMETERS:
+   character(len=*), intent(in) :: fn
 !
 ! !REVISION HISTORY:
 !  Original author(s): Karsten Bolding and Jorn Bruggeman
@@ -89,7 +92,7 @@
 !EOP
 !-----------------------------------------------------------------------
 !BOC
-   ierr = nf90_open('restart.nc',NF90_NOWRITE,ncid)
+   ierr = nf90_open(trim(fn) // '.nc',NF90_NOWRITE,ncid)
    if (ierr /= NF90_NOERR) call handle_err(ierr)
 
    end subroutine open_restart
@@ -152,9 +155,9 @@
    end if
 
    if (jd .ne. julianday .or. secs .ne. secondsofday) then
-      FATAL 'start time given in namelist does not match time'
+      FATAL 'start time given in gotm.yaml does not match time'
       FATAL 'read from restart file'
-      FATAL 'from namelist: ',julianday,secondsofday
+      FATAL 'from gotm.yaml: ',julianday,secondsofday
       call write_time_string(julianday,secondsofday,timestr_out)
       LEVEL3 trim(timestr_out)
       FATAL 'from hotstart: ',jd,secs

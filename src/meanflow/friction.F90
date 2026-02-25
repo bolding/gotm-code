@@ -5,7 +5,7 @@
 ! !ROUTINE: The vertical friction \label{sec:friction}
 !
 ! !INTERFACE:
-   subroutine friction(kappa,avmolu,tx,ty)
+   subroutine friction(nlev,kappa,avmolu,tx,ty,plume_type)
 !
 ! !DESCRIPTION:
 !  This subroutine updates the bottom roughness
@@ -51,19 +51,24 @@
 !   \point
 !  \end{equation}
 !  The model constant $\alpha$ is read in as {\tt charnock\_val} from
-!  the {\tt meanflow} namelist.
+!  the {\tt gotm.yaml}.
 !
 ! !USES:
+   use density,       only: rho0
    use meanflow,      only: h,z0b,h0b,MaxItz0b,z0s,za
-   use meanflow,      only: u,v,rho_0,gravity
+   use meanflow,      only: u,v,gravity
    use meanflow,      only: u_taub,u_taubo,u_taus,drag,taub
+   use meanflow,      only: calc_bottom_stress
    use meanflow,      only: charnock,charnock_val,z0s_min
-
 !
    IMPLICIT NONE
 !
 ! !INPUT PARAMETERS:
+!  number of vertical layers
+   integer, intent(in)                 :: nlev
+
    REALTYPE, intent(in)                :: kappa,avmolu,tx,ty
+   integer, intent(in)                 :: plume_type
 !
 ! !REVISION HISTORY:
 !  Original author(s): Hans Burchard & Karsten Bolding
@@ -72,13 +77,15 @@
 !
 ! !LOCAL VARIABLES:
    integer                             :: i
-   REALTYPE                            :: rr
+   REALTYPE                            :: rr_s,rr_b
    logical, save                       :: first=.true.
 !
 !-----------------------------------------------------------------------
 !BOC
 
    drag = _ZERO_
+   rr_s = _ZERO_
+   rr_b = _ZERO_
 
 !  use the Charnock formula to compute the surface roughness
    if (charnock) then
@@ -88,42 +95,54 @@
       z0s=z0s_min
    end if
 
-   if (first) then
-      u_taub = u_taubo
-      first = .false.
-   else
-      u_taubo = u_taub
-   end if
-!  iterate bottom roughness length MaxItz0b times
-   do i=1,MaxItz0b
-
-      if (avmolu.le.0) then
-         z0b=0.03*h0b + za
+   if (calc_bottom_stress) then
+      if (first) then
+         u_taub = u_taubo
+         first = .false.
       else
-         z0b=0.1*avmolu/max(avmolu,u_taub)+0.03*h0b + za
+         u_taubo = u_taub
       end if
+!     iterate bottom roughness length MaxItz0b times
+      do i=1,MaxItz0b
 
-!     compute the factor r (version 1, with log-law)
-      rr=kappa/(log((z0b+h(1)/2)/z0b))
+         if (avmolu.le.0) then
+            z0b=0.03*h0b + za
+         else
+            z0b=0.1*avmolu/max(avmolu,u_taub)+0.03*h0b + za
+         end if
 
-!     compute the factor r (version 2, with meanvalue log-law)
-!     frac=(z0b+h(1))/z0b
-!     rr=kappa/((z0b+h(1))/h(1)*log(frac)-1.)
+!        compute the factor r (version 1, with log-law)
+         rr_b=kappa/(log((z0b+h(1)/2)/z0b))
 
-!     compute the friction velocity at the bottom
-      u_taub = rr*sqrt( u(1)*u(1) + v(1)*v(1) )
+!        compute the factor r (version 2, with meanvalue log-law)
+!        frac=(z0b+h(1))/z0b
+!        rr=kappa/((z0b+h(1))/h(1)*log(frac)-1.)
 
-   end do
+!        compute the friction velocity at the bottom
+         u_taub = rr_b*sqrt( u(1)*u(1) + v(1)*v(1) )
+
+       end do
+   end if
+
+!  compute the factor r (version 1, with log-law)
+   if (plume_type .eq. 1) rr_s=kappa/(log((z0s+h(nlev)/2)/z0s))
 
 !  calculate bottom stress, which is used by sediment resuspension models
-   taub = u_taub*u_taub*rho_0
+   taub = u_taub*u_taub*rho0
 
 !  add bottom friction as source term for the momentum equation
-   drag(1) = drag(1) +  rr*rr
+   drag(1) = drag(1) +  rr_b*rr_b
+    
+!  add for surface plume scenario surface friction as source term for the momentum equation
+   if (plume_type .eq. 1) drag(nlev) = drag(nlev) +  rr_s*rr_s
 
 !  be careful: tx and ty are the surface shear-stresses
 !  already divided by rho!
-   u_taus=(tx**2+ty**2)**(1./4.)
+   if (plume_type == 1) then
+      u_taus=rr_s*sqrt( u(nlev)*u(nlev) + v(nlev)*v(nlev) )     
+   else
+      u_taus=(tx**2+ty**2)**(1./4.)
+   endif
 
    return
    end subroutine friction
